@@ -344,12 +344,11 @@ where
         if newline {
             writeln!(self.context).unwrap();
         }
-        if self.depth != 0 {
+        if self.depth == 0 {
+            write!(self.context, "/").unwrap();
+        } else {
             let mut depth = 1;
             while depth <= self.depth {
-                if depth > 1 {
-                    write!(self.context, "/").unwrap();
-                }
                 write!(self.context, "/{}", self.menus[depth].unwrap().label).unwrap();
                 depth += 1;
             }
