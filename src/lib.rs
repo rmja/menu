@@ -356,66 +356,79 @@ where
         write!(self.context, "> ").unwrap();
     }
 
-    /// Add a byte to the menu runner's buffer. If this byte is a
+    /// Get the write buffer to where bytes can be written before being processed
+    pub fn write_buf(&mut self) -> &mut [u8] {
+        &mut self.buffer[self.used..]
+    }
+
+    /// Process bytes in the write buffer. If this byte is a
     /// carriage-return, the buffer is scanned and the appropriate action
     /// performed.
     /// By default, an echo feature is enabled to display commands on the terminal.
-    pub async fn input_byte(&mut self, input: u8) {
-        // Strip carriage returns
-        if input == 0x0A {
-            return;
-        }
-        let outcome = if input == 0x0D {
-            #[cfg(not(feature = "echo"))]
-            {
-                // Echo the command
-                write!(self.context, "\r").unwrap();
-                if let Ok(s) = core::str::from_utf8(&self.buffer[0..self.used]) {
-                    write!(self.context, "{}", s).unwrap();
-                }
-            }
-            // Handle the command
-            self.process_command().await;
-            Outcome::CommandProcessed
-        } else if (input == 0x08) || (input == 0x7F) {
-            // Handling backspace or delete
-            if self.used > 0 {
-                write!(self.context, "\u{0008} \u{0008}").unwrap();
-                self.used -= 1;
-            }
-            Outcome::NeedMore
-        } else if self.used < self.buffer.len() {
-            self.buffer[self.used] = input;
-            self.used += 1;
+    pub async fn advance(&mut self, commit: usize) {
+        let start = self.used;
+        for offset in 0..commit {
+            let input = self.buffer[start + offset];
 
-            #[cfg(feature = "echo")]
-            {
-                // We have to do this song and dance because `self.prompt()` needs
-                // a mutable reference to self, and we can't have that while
-                // holding a reference to the buffer at the same time.
-                // This line grabs the buffer, checks it's OK, then releases it again
-                let valid = core::str::from_utf8(&self.buffer[0..self.used]).is_ok();
-                // Now we've released the buffer, we can draw the prompt
-                if valid {
+            // Strip carriage returns
+            if input == 0x0A {
+                return;
+            }
+            let outcome = if input == 0x0D {
+                #[cfg(not(feature = "echo"))]
+                {
+                    // Echo the command
                     write!(self.context, "\r").unwrap();
-                    self.prompt(false);
+                    if let Ok(s) = core::str::from_utf8(&self.buffer[0..self.used]) {
+                        write!(self.context, "{}", s).unwrap();
+                    }
                 }
-                // Grab the buffer again to render it to the screen
-                if let Ok(s) = core::str::from_utf8(&self.buffer[0..self.used]) {
-                    write!(self.context, "{}", s).unwrap();
+                // Handle the command
+                self.process_command().await;
+                Outcome::CommandProcessed
+            } else if (input == 0x08) || (input == 0x7F) {
+                // Handling backspace or delete
+                if self.used > 0 {
+                    write!(self.context, "\u{0008} \u{0008}").unwrap();
+                    self.used -= 1;
                 }
+                Outcome::NeedMore
+            } else if input == 0x1B {
+                // Handling escape
+                Outcome::CommandProcessed
+            } else {
+                self.buffer[self.used] = input;
+                self.used += 1;
+
+                // Echo if last char in buffer, or if the next char is special
+                #[cfg(feature = "echo")]
+                if offset == commit - 1
+                    || [0x0D, 0x08, 0x7F, 0x1B].contains(&self.buffer[start + offset + 1])
+                {
+                    // We have to do this song and dance because `self.prompt()` needs
+                    // a mutable reference to self, and we can't have that while
+                    // holding a reference to the buffer at the same time.
+                    // This line grabs the buffer, checks it's OK, then releases it again
+                    let valid = core::str::from_utf8(&self.buffer[0..self.used]).is_ok();
+                    // Now we've released the buffer, we can draw the prompt
+                    if valid {
+                        write!(self.context, "\r").unwrap();
+                        self.prompt(false);
+                    }
+                    // Grab the buffer again to render it to the screen
+                    if let Ok(s) = core::str::from_utf8(&self.buffer[0..self.used]) {
+                        write!(self.context, "{}", s).unwrap();
+                    }
+                }
+                Outcome::NeedMore
+            };
+            match outcome {
+                Outcome::CommandProcessed => {
+                    self.used = 0;
+                    self.prompt(true);
+                }
+                Outcome::NeedMore => {}
             }
-            Outcome::NeedMore
-        } else {
-            writeln!(self.context, "Buffer overflow!").unwrap();
-            Outcome::NeedMore
-        };
-        match outcome {
-            Outcome::CommandProcessed => {
-                self.used = 0;
-                self.prompt(true);
-            }
-            Outcome::NeedMore => {}
         }
     }
 
