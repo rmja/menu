@@ -4,7 +4,7 @@
 //! zero heap allocation.
 #![no_std]
 #![deny(missing_docs)]
-#![feature(async_fn_in_trait)]
+#![allow(async_fn_in_trait)]
 
 use core::{future::Future, pin::Pin};
 
