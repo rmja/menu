@@ -323,10 +323,11 @@ where
     /// buffer that the `Runner` can use. Feel free to pass anything as the
     /// `context` type - the only requirement is that the `Runner` can
     /// `write!` to the context, which it will do for all text output.
-    pub fn new(menu: &'a Menu<'a, T>, buffer: &'a mut [u8], mut context: T) -> Runner<'a, T> {
-        if let Some(handler) = menu.handler {
-            handler.entry(menu, &mut context);
-        }
+    pub fn new(menu: &'a Menu<'a, T>, buffer: &'a mut [u8], context: T) -> Runner<'a, T> {
+        assert!(
+            menu.handler.is_none(),
+            "The root menu cannot have a handler"
+        );
         let mut r = Runner {
             menus: [Some(menu), None, None, None],
             depth: 0,
